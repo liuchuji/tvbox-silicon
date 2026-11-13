@@ -18,7 +18,10 @@ case "$TARGET" in
   *) echo "Usage: $0 [ios|ios-simulator|tvos|tvos-simulator]" >&2; exit 2 ;;
 esac
 VERSION=3.14; SUPPORT=b13
-MINIMUM_OS=17.0  # the apps' deployment target in project.yml
+case "$FAMILY" in
+  iOS) MINIMUM_OS=16.0 ;;
+  tvOS) MINIMUM_OS=17.0 ;;
+esac
 case "$FAMILY" in
   iOS) SHA256=ce1c68affa1cbd9c5611a0f4a013e412f14a760cf22c6bb58cfb4d893073bd45 ;;
   tvOS) SHA256=72380111fcf9362b587b30e1fdf31df4ca8d6d0f72f46054eb7e3673d61f44d1 ;;
