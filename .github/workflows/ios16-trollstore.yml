@@ -29,7 +29,10 @@ jobs:
       - name: Install build tools
         run: |
           brew update
-          brew install xcodegen maven cmake autoconf automake libtool pkg-config ninja meson python@3.14
+          brew install xcodegen cmake autoconf automake libtool pkg-config ninja meson python@3.14
+          brew install --ignore-dependencies maven
+          mvn -version
+          java -version
           java -version
           mvn -version
 
