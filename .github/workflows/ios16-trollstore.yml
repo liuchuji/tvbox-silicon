@@ -1,0 +1,105 @@
+name: iOS 16 TrollStore IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ios16-compat
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios16:
+    runs-on: macos-15
+    timeout-minutes: 360
+    steps:
+      - name: Checkout iOS 16 compatibility branch
+        uses: actions/checkout@v4
+        with:
+          ref: ios16-compat
+
+      - name: Install build tools
+        run: |
+          brew update
+          brew install xcodegen maven cmake autoconf automake libtool pkg-config ninja meson python@3.14 openjdk@19
+
+      - name: Configure Java 19
+        run: |
+          echo "JAVA_HOME=$(brew --prefix openjdk@19)/libexec/openjdk.jdk/Contents/Home" >> "$GITHUB_ENV"
+          echo "$(brew --prefix openjdk@19)/bin" >> "$GITHUB_PATH"
+          java -version
+          mvn -version
+
+      - name: Prepare Java host
+        run: Scripts/build-java-host.sh
+
+      - name: Build FFmpeg and subtitle runtime
+        run: |
+          Scripts/build-apple-ffmpeg.sh
+          Scripts/build-apple-libass.sh
+
+      - name: Build embedded Apple JVM and native runtime
+        run: Scripts/package-apple-runtime.sh ios
+
+      - name: Build embedded Python runtime
+        run: |
+          export HOST_PYTHON="$(brew --prefix python@3.14)/bin/python3.14"
+          Scripts/build-apple-python.sh ios
+
+      - name: Fetch Node.js Mobile runtime
+        run: Scripts/fetch-node-mobile.sh
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned iOS app
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild -project TVBox.xcodeproj \
+            -scheme TVBox-iOS \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData-iOS16 \
+            IPHONEOS_DEPLOYMENT_TARGET=16.0 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build/ios16-xcodebuild.log
+
+      - name: Package TrollStore IPA
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find build/DerivedData-iOS16/Build/Products -maxdepth 2 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          mkdir -p build/ipa/Payload build/release
+          ditto "$APP" build/ipa/Payload/Yingxia.app
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' build/ipa/Payload/Yingxia.app/Info.plist
+          ditto -c -k --sequesterRsrc --keepParent build/ipa build/release/Yingxia-iOS16-TrollStore.ipa
+          shasum -a 256 build/release/Yingxia-iOS16-TrollStore.ipa | tee build/release/SHA256.txt
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yingxia-iOS16-TrollStore-IPA
+          path: |
+            build/release/Yingxia-iOS16-TrollStore.ipa
+            build/release/SHA256.txt
+          retention-days: 30
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yingxia-iOS16-build-logs
+          path: |
+            build/ios16-xcodebuild.log
+            build/verify-*.log
+            build/apple-runtime/
+          if-no-files-found: ignore
+          retention-days: 14
